@@ -1,0 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+#backdrop {
+  @apply bg-gray-900 bg-opacity-50 dark:bg-opacity-80 fixed inset-0 z-30;
+}
