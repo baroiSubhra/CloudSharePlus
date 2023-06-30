@@ -40,9 +40,7 @@ app.get("/getFileDetails/:id", async (req, res) => {
   const FILE_ID = req.params.id;
   const fidQuerry = sdk.Query.equal("fid", [FILE_ID]);
   const sharedQuerry = sdk.Query.equal("is_shared", [true]);
-  const deletedQuerry = sdk.Query.equal("is_deleted", [false]);
-  const limitQuerry = sdk.Query.limit(1);
-  const QUERRIES = [fidQuerry, sharedQuerry, deletedQuerry, limitQuerry];
+  const QUERRIES = [fidQuerry, sharedQuerry];
   let response;
   try {
     response = await databases.listDocuments(
@@ -50,6 +48,17 @@ app.get("/getFileDetails/:id", async (req, res) => {
       COLLECTION_ID,
       QUERRIES
     );
+    if (response.total > 0) {
+      let finalDocuments = response.documents.find((el) => !el.is_deleted);
+      if (finalDocuments) {
+        finalDocuments = [finalDocuments]
+      }
+      else {
+        finalDocuments = []
+      }
+      response.total = finalDocuments.length;
+      response.documents = finalDocuments;
+    }
     res.send(response);
   } catch (error) {
     response = error;
