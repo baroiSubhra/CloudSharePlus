@@ -1,5 +1,5 @@
 {
-  "name": "server",
+  "name": "cloudshareplusserver",
   "version": "1.0.0",
   "description": "a test server",
   "main": "index.js",
