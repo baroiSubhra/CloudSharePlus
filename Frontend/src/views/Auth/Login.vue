@@ -14,7 +14,7 @@
           >
             Login Or Signup Into Your Account
           </h1>
-          <form class="space-y-4 md:space-y-6" @submit.prevent="login">
+          <div class="space-y-4 md:space-y-6">
             <div>
               <label
                 for="email"
@@ -46,6 +46,19 @@
               {{ errorText }} , Try Login Or Signup in Sometime
             </p>
             <button
+              v-if="showSendMagicLinkButton"
+              @click="loginWithMagicLink"
+              type="submit"
+              :disabled="disableMagicLinkSentSubmitButton"
+              class="inline-flex w-full justify-center items-center px-5 py-3 text-sm font-medium text-center text-white bg-gradient-to-b from-orange-500 to-yellow-500 rounded-lg hover:bg-gradient-to-b hover:from-orange-600 hover:to-yellow-600 focus:ring-4 focus:outline-none focus:ring-gray-50 dark:focus:bg-white disabled:bg-gradient-to-b disabled:from-orange-300 disabled:to-yellow-300"
+            >
+              <div v-if="!disableMagicLinkSentSubmitButton">Send Magic Link</div>
+              <div v-else>
+                <Spinner />
+              </div>
+            </button>
+            <button
+              @click="login"
               type="submit"
               :disabled="disableSubmitButton"
               class="inline-flex w-full justify-center items-center px-5 py-3 text-sm font-medium text-center text-white bg-gradient-to-b from-orange-500 to-yellow-500 rounded-lg hover:bg-gradient-to-b hover:from-orange-600 hover:to-yellow-600 focus:ring-4 focus:outline-none focus:ring-gray-50 dark:focus:bg-white disabled:bg-gradient-to-b disabled:from-orange-300 disabled:to-yellow-300"
@@ -55,7 +68,7 @@
                 <Spinner />
               </div>
             </button>
-          </form>
+          </div>
         </div>
       </div>
     </div>
@@ -78,16 +91,25 @@ export default {
       errorText: '',
       showError: false,
       successfulText: '',
-      showSuccessText: false
+      showSuccessText: false,
+      showSendMagicLinkButton: false,
+      magicLinkTriggered: false
     }
   },
   computed: {
     disableSubmitButton() {
       return this.mlCode && this.mlCode.length > 0 ? this.validatingMagicLnk : this.loginTriggered
+    },
+    disableMagicLinkSentSubmitButton() {
+      return this.magicLinkTriggered
     }
   },
   methods: {
+    resetErrors() {
+      this.showError = false
+    },
     async login() {
+      this.resetErrors()
       this.loginTriggered = true
       const app = await passage.appInfo()
       const webAuthConfig = passage.checkWebauthnConfig(app)
@@ -97,30 +119,23 @@ export default {
       if (userInfo === null) {
         //register
         if (webAuthConfig && isWebauthnSupported) {
-          response = await this.getResponseInDesiredFormat(() => {
-            passage.register(this.email)
-          })
+          response = await this.getResponseInDesiredFormat(passage.register, this.email)
         } else {
-          response = await this.getResponseInDesiredFormat(() => {
-            passage.newRegisterMagicLink(this.email)
-          })
+          response = await this.getResponseInDesiredFormat(passage.newRegisterMagicLink, this.email)
         }
       } else {
         //login
         if (webAuthConfig && isWebauthnSupported) {
-          response = await this.getResponseInDesiredFormat(() => {
-            passage.login(this.email)
-          })
+          response = await this.getResponseInDesiredFormat(passage.login, this.email)
         } else {
-          response = await this.getResponseInDesiredFormat(() => {
-            passage.newLoginMagicLink(this.email)
-          })
+          response = await this.getResponseInDesiredFormat(passage.newLoginMagicLink, this.email)
         }
       }
       if (response.success) {
         this.showSuccessText = true
         if (webAuthConfig && isWebauthnSupported) {
-          this.successfulText = 'Complete the login using biometrics'
+          this.successfulText = 'Completed the login using biometrics'
+          this.$router.push(response.data.redirect_url)
         } else {
           this.successfulText = "We've sent you a maigc link ,please check your email"
         }
@@ -128,29 +143,44 @@ export default {
       } else {
         this.showError = true
         this.errorText = response.data.message
+        if (webAuthConfig && isWebauthnSupported) {
+          this.showSendMagicLinkButton = true
+        }
         this.$router.replace({ query: null })
       }
       this.loginTriggered = false
     },
-    async authenticateMagicLink() {
-      this.validatingMagicLnk = true
-      const app = await passage.appInfo()
-      const webAuthConfig = passage.checkWebauthnConfig(app)
-      const isWebauthnSupported = await passage.isWebauthnSupported()
+    async loginWithMagicLink() {
+      this.resetErrors()
+      this.magicLinkTriggered = true
+      const userInfo = await passage.identifierExists(this.email)
       let response
-      if (webAuthConfig && isWebauthnSupported) {
-        response = await this.getResponseInDesiredFormat(() =>
-          passage.magicLinkActivateWebAuthnNewDevice(this.mlCode)
-        )
+      if (userInfo === null) {
+        //register
+        response = await this.getResponseInDesiredFormat(passage.newRegisterMagicLink, this.email)
       } else {
-        response = await this.getResponseInDesiredFormat(() =>
-          passage.magicLinkActivate(this.mlCode)
-        )
+        //login
+        response = await this.getResponseInDesiredFormat(passage.newLoginMagicLink, this.email)
       }
       if (response.success) {
         this.showSuccessText = true
+        this.successfulText = "We've sent you a maigc link ,please check your email"
+        this.saveEmail()
+      } else {
+        this.showError = true
+        this.errorText = response.data.message
+        this.$router.replace({ query: null })
+      }
+      this.magicLinkTriggered = false
+    },
+    async authenticateMagicLink() {
+      this.validatingMagicLnk = true
+      let response
+      response = await this.getResponseInDesiredFormat(passage.magicLinkActivate, this.mlCode)
+      if (response.success) {
+        this.showSuccessText = true
         this.successfulText = 'Validation Complete'
-        this.$router.push('/login')
+        this.$router.push(response.data.redirect_url)
       } else {
         this.showError = true
         this.errorText = response.data.message
@@ -158,10 +188,10 @@ export default {
       }
       this.validatingMagicLnk = false
     },
-    async getResponseInDesiredFormat(fn) {
+    async getResponseInDesiredFormat(fn, ...param) {
       let response
       try {
-        response = await fn()
+        response = await fn.call(passage, ...param)
         response = {
           data: response,
           success: true
